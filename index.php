@@ -16,65 +16,26 @@ if (!empty($_POST['add_submit']) && $_POST['add_submit'] == 'SAVE')
 	if (!empty($_POST['add_absent_member']))
 	{
 		$_POST['search_member_id'] = @$_POST['add_absent_member'];
-
-		$member = intval($_POST['add_absent_member']);
-		$type   = intval($_POST['add_absent_type']);
-
-		$conn = mysqli_connect($servername, $username, $password, $database);
-		if (mysqli_connect_errno()) 
-			die('Failed to connect to MySQL: '.mysqli_connect_errno());
-		$rows = mysqli_query($conn, 'INSERT INTO `member_absent` (`member_id`, `type_id`, `ondate`, `title`) VALUES ('.$member.', '.$type.', "'.$ondate.'", "'.$title.'")');
-		if ($rows) {
-		  echo 'New record created successfully';
-		} else {
-		  echo 'Error: '.mysqli_error($conn);
-		}
-		mysqli_close($conn);
+		getDB()->Execute('INSERT INTO `member_absent` (`member_id`, `type_id`, `ondate`, `title`) VALUES ('.intval($_POST['add_absent_member']).', '.intval($_POST['add_absent_type']).', "'.$ondate.'", "'.$title.'")');
 	}else{
 		$is_nation  = !empty($_POST['add_holiday_nation']) ? intval($_POST['add_holiday_nation']) : 0;
 		$is_office  = !empty($_POST['add_holiday_office']) ? intval($_POST['add_holiday_office']) : 0;
 		$is_offwork = !empty($_POST['add_holiday_offwork']) ? intval($_POST['add_holiday_offwork']) : 0;
-
-		$conn = mysqli_connect($servername, $username, $password, $database);
-		if (mysqli_connect_errno()) 
-			die('Failed to connect to MySQL: '.mysqli_connect_errno());
-		$rows = mysqli_query($conn, 'INSERT INTO `holiday` (`title`, `ondate`, `is_nation`, `is_office`, `is_offwork`) VALUES ("'.$title.'", "'.$ondate.'", '.$is_nation.', '.$is_office.', '.$is_offwork.')');
-		if ($rows) {
-		  echo 'New record created successfully';
-		} else {
-		  echo 'Error: '.mysqli_error($conn);
-		}
-		mysqli_close($conn);
+		getDB()->Execute('INSERT INTO `holiday` (`title`, `ondate`, `is_nation`, `is_office`, `is_offwork`) VALUES ("'.$title.'", "'.$ondate.'", '.$is_nation.', '.$is_office.', '.$is_offwork.')');
 	}
-
-
 	redirect();
 }
 
-$admin_id   = '1';
+// $admin_id   = '1';
 $member_id  = !empty($_POST['search_member_id']) ? intval($_POST['search_member_id']) : 0;
 $date_start = date('Y-01-01');
 $date_end   = date('Y-m-d', strtotime('+1 year', strtotime($date_start)));
-
 if (!empty($member_id))
 {
-	$conn = mysqli_connect($servername, $username, $password, $database);
-	if (mysqli_connect_errno()) 
-		die('Failed to connect to MySQL: '.mysqli_connect_errno());
-	$rows = mysqli_query($conn, 'SELECT `join` FROM `member` WHERE `id` = '.$member_id);
-	$rows = mysqli_fetch_row($rows);
-	mysqli_close($conn);
-
-	$join_month = !in_array($member_id, [1,2]) ? date('d M', strtotime($rows[0])) : '01 Jan';
-	$active_end = date('Y-m-d', strtotime($join_month.date('Y')));
-	$date_start = date('Y-m-d', strtotime('-1 year', strtotime($active_end)));
-	$date_end   = $active_end;
-
-	if ($active_end < date('Y-m-d')) {
-		$date_start = $active_end;
-		$date_end   = date('Y-m-d', strtotime('+1 year', strtotime($date_start)));
-	}	
+	$member_data = getDB()->getRow('SELECT `name`, `join` FROM `member` WHERE `id` = '.$member_id);
+	list($date_start, $date_end, $get_offwork) = work_date($member_id, $member_data['join']);
 }
+
 
 if (!empty($_POST['search_daterange']))
 {
@@ -101,13 +62,8 @@ $days_name   = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
 $months_name = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 
-$conn = mysqli_connect($servername, $username, $password, $database);
-if (mysqli_connect_errno()) 
-	die('Failed to connect to MySQL: '.mysqli_connect_errno());
-$rows = mysqli_query($conn, 'SELECT `ondate`, `title` FROM `holiday` WHERE `is_nation` = 1');
-$rows = mysqli_fetch_all($rows, MYSQLI_ASSOC);
-mysqli_close($conn);
-
+// holiday nation
+$rows    = getDB()->getAll('SELECT `ondate`, `title` FROM `holiday` WHERE `is_nation` = 1 AND `ondate` >= "'.$date_start.'" AND `ondate` <= "'.$date_end.'"');
 $holiday = [];
 foreach ($rows as $v) {
 	if (isset($holiday[$v['ondate']])) {
@@ -118,13 +74,8 @@ foreach ($rows as $v) {
 }
 
 
-$conn = mysqli_connect($servername, $username, $password, $database);
-if (mysqli_connect_errno()) 
-	die('Failed to connect to MySQL: '.mysqli_connect_errno());
-$rows = mysqli_query($conn, 'SELECT `ondate`, `title` FROM `holiday` WHERE `is_office` = 1');
-$rows = mysqli_fetch_all($rows, MYSQLI_ASSOC);
-mysqli_close($conn);
-
+// holiday office
+$rows           = getDB()->getAll('SELECT `ondate`, `title` FROM `holiday` WHERE `is_office` = 1 AND `ondate` >= "'.$date_start.'" AND `ondate` <= "'.$date_end.'"');
 $holiday_office = [];
 foreach ($rows as $v) {
 	if (isset($holiday_office[$v['ondate']])) {
@@ -135,15 +86,41 @@ foreach ($rows as $v) {
 }
 
 
+// holiday offwork
+$data            = getDB()->getAll('SELECT `ondate`, `title` FROM `holiday` WHERE `is_offwork` = 1 AND `ondate` >= "'.$date_start.'" AND `ondate` <= "'.$date_end.'"');
+$holiday_offwork = [];
+foreach ($data as $v)
+{
+	$holiday_offwork[$v['ondate']] = $v['title'];
+}
+
+
+// member list
+$rows   = getDB()->getAll('SELECT `id`, `name`, `join` FROM `member` WHERE 1');
+$member = $offwork_list = [];
+foreach ($rows as $v) {
+	// list member untuk select option
+	$member[$v['id']] = $v['name'];
+
+	// cuti expired
+	list($date_start, $date_end, $get_offwork) = work_date($v['id'], $v['join']);
+	$offwork_used   = getDB()->getOne('SELECT count(`id`) FROM `member_absent` WHERE `member_id` = '.$v['id'].' AND `ondate` >= "'.$date_start.'" AND `ondate` <= "'.$date_end.'" AND `type_id` != 1');
+	$offwork_exp    = $get_offwork ? date('M j, Y', strtotime('-1 day', strtotime($date_end))) : '-';
+	$offwork_left   = $get_offwork ? (12 - intval($offwork_used) - count($holiday_offwork)) : '-';
+	$offwork_list[] = [$v['name'], $offwork_left, $offwork_exp];
+}
+usort($offwork_list, function($a, $b) {
+	if ($a[2] != '-' && $b[2] != '-') {
+	  return strtotime($a[2]) <=> strtotime($b[2]);
+	}
+});
+
+
+// member absent
+$holiday_offwork_nation = count($holiday_offwork);
 if (!empty($member_id))
 {
-	$conn = mysqli_connect($servername, $username, $password, $database);
-	if (mysqli_connect_errno()) 
-		die('Failed to connect to MySQL: '.mysqli_connect_errno());
-	$rows = mysqli_query($conn, 'SELECT `ondate`, `a`.`title` FROM `member_absent` AS `a` LEFT JOIN `member_absent_type` AS `t` ON(`a`.`type_id`=`t`.`id`) WHERE `member_id` = '.$member_id);
-	$rows = mysqli_fetch_all($rows, MYSQLI_ASSOC);
-	mysqli_close($conn);
-
+	$rows  = getDB()->getAll('SELECT `ondate`, `title`, `type_id` FROM `member_absent` WHERE `member_id` = '.$member_id.' AND `ondate` >= "'.$date_start.'" AND `ondate` <= "'.$date_end.'"');
 	$notes = [];
 	foreach ($rows as $v) {
 		if (isset($notes[$v['ondate']])) {
@@ -151,8 +128,20 @@ if (!empty($member_id))
 		}else{
 			$notes[$v['ondate']] = $v['title'];
 		}
+
+		if ($v['type_id'] != 1)
+			$holiday_offwork[$v['ondate']] = $v['title'];
 	}
 }
+ksort($holiday_offwork);
+
+// member absent type
+$rows = getDB()->getAll('SELECT `id`, `title` FROM `member_absent_type` WHERE 1');
+$absent_type = [];
+foreach ($rows as $v) {
+	$absent_type[$v['id']] = $v['title'];
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="">
@@ -161,109 +150,63 @@ if (!empty($member_id))
 		<meta http-equiv="X-UA-Compatible" content="IE=edge">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<title>Esoftplay's Calender</title>
-
-		<!-- Bootstrap CSS -->
 		<link rel="stylesheet" href="assets/css/bootstrap.min.css">
 		<link rel="stylesheet" href="assets/css/daterangepicker.css">
-
-		<!-- HTML5 Shim and Respond.js IE8 support of HTML5 elements and media queries -->
-		<!-- WARNING: Respond.js doesn't work if you view the page via file:// -->
-		<!--[if lt IE 9]>
-			<script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
-			<script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
-		<![endif]-->
-		<style type="text/css">
-			.weekend {
-				color: #F99;
-			}
-			.holiday {
-				color: #f33;
-				cursor: pointer;
-			}
-
-			.note_red,
-			.note_blue {
-		    position: relative;
-		    cursor: pointer;
-			}
-			
-			.flagged_red {
-				content: "";
-		    position: absolute;
-		    top: 0;
-		    right: 0;
-		    width: 0; 
-		    height: 0; 
-		    display: block;
-		    border-top: 8px solid #F00;
-		    border-left: 8px solid transparent;
-		    border-bottom: 8px solid transparent;
-		    z-index: 2;
-			}
-
-			.flagged_blue {
-				content: "";
-		    position: absolute;
-		    top: 0;
-		    right: 0;
-		    width: 0; 
-		    height: 0; 
-		    display: block;
-		    border-top: 10px solid #00F;
-		    border-left: 10px solid transparent;
-		    border-bottom: 10px solid transparent;
-		    z-index: 1;
-			}
-			
-			.dotted {
-				position: absolute;
-				bottom: 0;
-				left: 3px;
-				font-weight: bold;
-				font-size: 20px;
-				letter-spacing: -2px;
-				z-index: -1;
-			}
-		</style>
+		<link rel="stylesheet" href="assets/css/style.css">
 	</head>
 	<body>
 		<h1 class="text-center">Esoftplay's Calender</h1>
 		<hr>
 		<div class="container">
-			<form method="POST" action="" name="search" class="form-inline pull-right" role="form">
-				<div class="form-group">
-					<label class="sr-only">Member List</label>
-					<select name="search_member_id" class="form-control" title="Member List" placeholder="Member List" onchange="this.form.submit()">
-						<option value="">---- Pilih Member ----</option>
-						<?php
-						$conn = mysqli_connect($servername, $username, $password, $database);
-						if (mysqli_connect_errno()) 
-							die('Failed to connect to MySQL: '.mysqli_connect_errno());
-						$rows = mysqli_query($conn, 'SELECT `id`, `name` FROM `member` WHERE 1');
-						$rows = mysqli_fetch_all($rows, MYSQLI_ASSOC);
-						mysqli_close($conn);
+			<div class="col-md-6">
+				<form method="POST" action="" name="search" class="form-inline" role="form">
+					<div class="form-group">
+						<label class="sr-only">Member List</label>
+						<select name="search_member_id" class="form-control" title="Member List" placeholder="Member List" onchange="this.form.submit()">
+							<option value="">---- Pilih Member ----</option>
+							<?php
+							foreach ($member as $members => $member_name)
+							{
+								$selected = ($members == $member_id) ? ' selected' : '';
+								echo '<option value="'.$members.'"'.$selected.'>'.$member_name.'</option>';
+							}
+							?>
+						</select>
+					</div>
+					<div class="form-group">
+						<label class="sr-only">Date Range</label>
+						<input type="text" class="form-control js-daterangepicker-clear" name="search_daterange" placeholder="Select Dates">
+					</div>
+					<button type="submit" name="search_submit_search" value="SEARCH" class="btn btn-default btn-secondary"><span class="glyphicon glyphicon-search"></span></button>
+					<button type="submit" name="search_submit_search" value="RESET" class="btn btn-default btn-secondary"><span class="glyphicon glyphicon-remove-circle"></span></button> 
+				</form>
+				<div class="clearfix"></div>
+				<p></p>
+				<?php 
+					if (!empty($member_id) && $get_offwork)
+					{
+						echo table($holiday_offwork, 'Daftar Cuti '.$member_data['name']); 
+					}else{
+						echo table($holiday_offwork, 'Daftar Cuti Bersama');
+					}
+				?>
+			</div>
+			<div class="col-md-6">
+				<?php
+				if (!empty($member_id) && $get_offwork)
+				{
+					echo '<p style="margin-top: 44px;"></p>';
+					echo table([
+						'Total Cuti Bersama' => $holiday_offwork_nation.' Kali',
+						'Sisa Cuti'          => (12 - count($holiday_offwork)).' Kali',
+						'Batas Akhir Cuti'   => date('M j, Y', strtotime('-1 day', strtotime($date_end)))
+					]);
+				}else{
+					echo table($offwork_list, array('Nama', 'Sisa Cuti', 'Batas Akhir Cuti'));
+				}
+				?>
+			</div>
 
-						$member = [];
-						foreach ($rows as $v) {
-							$member[$v['id']] = $v['name'];
-						}
-
-
-						foreach ($member as $members => $member_name)
-						{
-							$selected = ($members == $member_id) ? ' selected' : '';
-							echo '<option value="'.$members.'"'.$selected.'>'.$member_name.'</option>';
-						}
-						?>
-					</select>
-				</div>
-				<div class="form-group">
-					<label class="sr-only">Date Range</label>
-					<input type="text" class="form-control js-daterangepicker-clear" name="search_daterange" placeholder="Select Dates">
-				</div>
-				<button type="submit" name="search_submit_search" value="SEARCH" class="btn btn-default btn-secondary"><span class="glyphicon glyphicon-search"></span></button>
-				<button type="submit" name="search_submit_search" value="RESET" class="btn btn-default btn-secondary"><span class="glyphicon glyphicon-remove-circle"></span></button> 
-			</form>
 		</div>
 		<hr>
 
@@ -347,16 +290,13 @@ if (!empty($member_id))
 			?>
 		</div>
 
-		<!-- jQuery -->
 		<script src="assets/js/jquery.js"></script>
-		<!-- Bootstrap JavaScript -->
 		<script src="assets/js/bootstrap.min.js"></script>
 		<script src="assets/js/moment.min.js"></script>
 		<script src="assets/js/daterangepicker.js"></script>
+		<script src="assets/js/script.js"></script>
 	</body>
 </html>
-
-
 
 
 <!-- Modal -->
@@ -379,19 +319,6 @@ if (!empty($member_id))
 							<select name="add_absent_type" class="form-control" title="Tipe Absen" placeholder="Tipe Absen">
 								<option value="">---- Pilih Tipe ----</option>
 								<?php
-								$conn = mysqli_connect($servername, $username, $password, $database);
-								if (mysqli_connect_errno()) 
-									die('Failed to connect to MySQL: '.mysqli_connect_errno());
-								$rows = mysqli_query($conn, 'SELECT `id`, `title` FROM `member_absent_type` WHERE 1');
-								$rows = mysqli_fetch_all($rows, MYSQLI_ASSOC);
-								mysqli_close($conn);
-
-								$absent_type = [];
-								foreach ($rows as $v) {
-									$absent_type[$v['id']] = $v['title'];
-								}
-
-
 								foreach ($absent_type as $absent_type_id => $absent_type_name)
 								{
 									echo '<option value="'.$absent_type_id.'">'.$absent_type_name.'</option>';
@@ -434,36 +361,3 @@ if (!empty($member_id))
   </div>
 </div>
 
-
-<script type="text/javascript">
-$(document).ready(function() {
-	$('[data-toggle="popover"]').popover();
-
-	$("[data-admin]").click(function () {
-    $("[name='add_ondate']").val($(this).data("date"));
-    $(".modal-title").html($(this).data("date"));
-
-    $("#myModal").modal("show");  
-    $("[data-toggle='popover']").popover("hide");
-	});
-});
-</script>
-
-<script>
-  $(document).on('ready', function () {
-    $('.js-daterangepicker-clear').daterangepicker({
-      autoUpdateInput: false,
-      locale: {
-        cancelLabel: 'Clear'
-      }
-    });
-
-    $('.js-daterangepicker-clear').on('apply.daterangepicker', function(ev, picker) {
-      $(this).val(picker.startDate.format('YYYY-MM-DD') + ' - ' + picker.endDate.format('YYYY-MM-DD'));
-    });
-
-    $('.js-daterangepicker-clear').on('cancel.daterangepicker', function(ev, picker) {
-      $(this).val('');
-    });
-  });
-</script>

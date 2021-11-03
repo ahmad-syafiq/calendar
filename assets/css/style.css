@@ -1,0 +1,51 @@
+.weekend {
+	color: #F99;
+}
+.holiday {
+	color: #f33;
+	cursor: pointer;
+}
+
+.note_red,
+.note_blue {
+  position: relative;
+  cursor: pointer;
+}
+
+.flagged_red {
+	content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0; 
+  height: 0; 
+  display: block;
+  border-top: 8px solid #F00;
+  border-left: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+  z-index: 2;
+}
+
+.flagged_blue {
+	content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 0; 
+  height: 0; 
+  display: block;
+  border-top: 10px solid #00F;
+  border-left: 10px solid transparent;
+  border-bottom: 10px solid transparent;
+  z-index: 1;
+}
+
+.dotted {
+	position: absolute;
+	bottom: 0;
+	left: 3px;
+	font-weight: bold;
+	font-size: 20px;
+	letter-spacing: -2px;
+	z-index: -1;
+}
